@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hand AR</title>
+<link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:#fff}
+  #cv{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:1;pointer-events:none}
+  #vid{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);z-index:0;background:#000}
+
+  .glass{background:rgba(235,245,250,.34);
+    border:1px solid rgba(255,255,255,.35);box-shadow:0 8px 30px rgba(0,0,0,.18)}
+
+  #lamp{position:fixed;left:0;top:0;z-index:2;pointer-events:none;display:none;will-change:transform}
+  #fps{position:fixed;top:14px;left:14px;padding:5px 12px;border-radius:99px;font-size:11px;letter-spacing:.5px;z-index:5}
+
+  #side{position:fixed;top:16px;bottom:16px;right:14px;width:74px;border-radius:26px;z-index:5;
+    display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:26px}
+  #side::before{content:"";position:absolute;top:10px;width:44px;height:2px;background:rgba(255,255,255,.9);border-radius:2px}
+  .btn{--p:0;position:relative;width:48px;height:48px;border-radius:10px;border:1px solid rgba(255,255,255,.5);
+    background:rgba(255,255,255,.45);color:#fff;display:grid;place-items:center;cursor:pointer;transition:background .15s,transform .15s}
+  .btn svg{width:24px;height:24px;stroke:#fff;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 1px rgba(0,0,0,.25))}
+  .btn.hover{background:rgba(120,200,230,.65);transform:scale(1.08)}
+  .btn.on{background:rgba(120,200,230,.65)}
+  .btn::after{content:"";position:absolute;inset:-5px;border-radius:14px;pointer-events:none;
+    background:conic-gradient(#7fe0ff calc(var(--p)*1%),transparent 0);
+    -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px));
+            mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px));opacity:calc(var(--p)/100)}
+
+  #note{position:fixed;top:40px;left:40px;width:min(640px,calc(100vw - 150px));height:min(340px,54vh);border-radius:22px;z-index:4;
+    padding:16px 22px;display:none;flex-direction:column}
+  #note.show{display:flex}
+  #note header{display:flex;align-items:center;gap:10px;font-size:13px;letter-spacing:1px;font-weight:600}
+  #note header .sp{flex:1}
+  #note header button{background:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:8px;
+    font-size:11px;padding:3px 9px;cursor:pointer}
+  #chord{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500}
+  #chord i{width:9px;height:9px;border-radius:50%;border:1px solid #fff;background:transparent;display:inline-block}
+  #chord i.f{background:#7fe0ff;border-color:#7fe0ff}
+  #chord b{min-width:26px;text-align:center;font-size:20px;color:#fff;font-family:'Patrick Hand',cursive}
+  #chord .bar{width:34px;height:4px;border-radius:2px;background:rgba(255,255,255,.3);overflow:hidden}
+  #chord .bar span{display:block;height:100%;width:0;background:#7fe0ff}
+  #sheet{position:absolute;inset:44px 14px 14px;border-radius:14px;background:rgba(10,20,30,.78);padding:10px;overflow:auto;display:none;
+    grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px 10px;font-size:12px;z-index:3}
+  #sheet.show{display:grid}
+  #sheet div{display:flex;align-items:center;gap:6px;white-space:nowrap}
+  #sheet b{width:34px;color:#7fe0ff}
+  #sheet small{grid-column:1/-1;opacity:.75;line-height:1.5}
+  #pad{flex:1;padding-left:18px;margin-top:6px;outline:none;overflow-y:auto;font-family:'Patrick Hand',cursive;font-size:clamp(20px,4vh,26px);line-height:34px;color:#111;
+    background:repeating-linear-gradient(transparent 0 33px,rgba(255,255,255,.9) 33px 34px);white-space:pre-wrap;word-break:break-word}
+
+  #start{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:radial-gradient(circle at 50% 40%,#1b2a3a,#05070a)}
+  #start .box{text-align:center;max-width:420px;padding:24px}
+  #start h1{font-size:28px;margin-bottom:8px}
+  #start p{font-size:14px;opacity:.75;line-height:1.55;margin-bottom:18px}
+  #go{padding:12px 28px;border-radius:99px;border:none;font-size:15px;font-weight:600;cursor:pointer;background:#7fe0ff;color:#04202b}
+  #msg{margin-top:14px;font-size:13px;color:#ffb4b4;min-height:18px}
+  ul.help{list-style:none;text-align:left;font-size:13px;opacity:.8;margin:0 auto 20px;display:inline-block;line-height:1.8}
+</style>
+</head>
+<body>
+<video id="vid" playsinline muted></video>
+<canvas id="cv"></canvas>
+
+<div id="lamp"></div>
+<div id="fps" class="glass">-- FPS</div>
+
+<div id="note" class="glass">
+  <header>
+    <span>NOTEPAD</span><span class="sp"></span>
+    <span id="chord"><i></i><i></i><i></i><i></i><i></i><b id="pend"></b><span class="bar"><span id="hold"></span></span></span>
+    <button id="help">?</button><button id="clr">Hapus</button>
+  </header>
+  <div id="pad" contenteditable="true" spellcheck="false"></div>
+  <div id="sheet"></div>
+</div>
+
+<nav id="side" class="glass">
+  <button class="btn" id="bLamp" title="Lampu / spotlight"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg></button>
+  <button class="btn" id="bNote" title="Notepad"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h8"/></svg></button>
+  <button class="btn" id="bPow" title="Matikan"><svg viewBox="0 0 24 24"><path d="M12 3v9M6.3 6.6a8 8 0 1 0 11.4 0"/></svg></button>
+</nav>
+
+<div id="start">
+  <div class="box">
+    <h1>Hand AR</h1>
+    <p>Kontrol dengan tangan lewat kamera.</p>
+    <ul class="help">
+      <li>☝️ Arahkan telunjuk ke tombol, tahan 1 detik atau <b>pinch</b> (jempol+telunjuk) untuk klik</li>
+      <li>🙌 Dua tangan: bentuk kotak 3D di antara jari</li>
+      <li>✍️ Notepad: gerakkan jari (tekuk kombinasi jari, tahan sebentar) → huruf tertulis. Tombol <b>?</b> = tabel gerakan</li>
+    </ul><br>
+    <button id="go">Mulai Kamera</button>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<script type="module">
+import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d', { desynchronized:true }), vid = $('vid');
+let W = 0, H = 0, dpr = 1;
+function resize(){
+  dpr = 1;
+  W = innerWidth; H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const L = $('lamp'), S = Math.max(W, H) * 4;
+  L.style.width = L.style.height = S + 'px'; L.dataset.s = S;
+  L.style.background = 'radial-gradient(circle closest-side, rgba(0,0,0,0) 1%, rgba(0,0,0,.55) 8%, rgba(0,0,0,.9) 22.5%, rgba(0,0,0,.9) 100%)';
+}
+addEventListener('resize', resize); resize();
+
+/* ---------- state ---------- */
+function moveLamp(x, y){ const L = $('lamp'), h = L.dataset.s / 2; L.style.transform = `translate3d(${x - h}px,${y - h}px,0)`; }
+let landmarker = null, stream = null, running = false;
+let lampOn = false, noteOn = false;
+let lastVT = -1, frames = 0, fpsT = performance.now();
+
+/* ---------- noise texture (4 pola dibuat sekali, lalu diputar) ---------- */
+const patterns = [];
+(function(){
+  for(let k = 0; k < 4; k++){
+    const c = document.createElement('canvas'); c.width = c.height = 96;
+    const x = c.getContext('2d'), id = x.createImageData(96, 96);
+    for(let i = 0; i < id.data.length; i += 4){
+      const v = Math.random() < .55 ? 255 : 40;
+      id.data[i] = id.data[i+1] = id.data[i+2] = v;
+      id.data[i+3] = Math.random() * 150;
+    }
+    x.putImageData(id, 0, 0);
+    patterns.push(ctx.createPattern(c, 'repeat'));
+  }
+})();
+let pattern = patterns[0], nzT = 0, nzK = 0;
+
+/* ---------- start camera + model ---------- */
+$('go').onclick = async () => {
+  const msg = $('msg'); msg.textContent = '';
+  $('go').disabled = true; $('go').textContent = 'Memuat...';
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:{ideal:640}, height:{ideal:480}, frameRate:{ideal:30} }, audio:false });
+    vid.srcObject = stream; await vid.play();
+  }catch(e){
+    msg.textContent = 'Kamera ditolak/tidak tersedia. Buka lewat https atau localhost.';
+    $('go').disabled = false; $('go').textContent = 'Mulai Kamera'; return;
+  }
+  try{
+    if(!landmarker){
+      const fs = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+      const modelAssetPath = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+      try{
+        landmarker = await HandLandmarker.createFromOptions(fs, { baseOptions:{ modelAssetPath, delegate:'GPU' }, runningMode:'VIDEO', numHands:2 });
+      }catch(_){
+        landmarker = await HandLandmarker.createFromOptions(fs, { baseOptions:{ modelAssetPath, delegate:'CPU' }, runningMode:'VIDEO', numHands:2 });
+      }
+    }
+  }catch(e){
+    msg.textContent = 'Gagal memuat model hand tracking: ' + (e.message || e);
+    $('go').disabled = false; $('go').textContent = 'Mulai Kamera'; return;
+  }
+  $('start').style.display = 'none';
+  $('go').disabled = false; $('go').textContent = 'Mulai Kamera';
+  running = true; lastR = 0; schedule(); requestAnimationFrame(render);
+};
+
+function stopAll(){
+  running = false;
+  if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; }
+  vid.srcObject = null;
+  setNote(false); setLamp(false);
+  $('start').style.display = 'grid';
+}
+
+/* ---------- UI buttons ---------- */
+function setLamp(v){ lampOn = v; $('bLamp').classList.toggle('on', v); $('lamp').style.display = v ? 'block' : 'none'; if(v) moveLamp(W / 2, H / 2); }
+function setNote(v){
+  noteOn = v; $('bNote').classList.toggle('on', v); $('note').classList.toggle('show', v);
+  if(!v) $('sheet').classList.remove('show');
+}
+$('bLamp').onclick = () => setLamp(!lampOn);
+$('bNote').onclick = () => setNote(!noteOn);
+$('bPow').onclick = stopAll;
+$('clr').onclick = () => { pad.textContent = ''; };
+
+/* ---------- notepad: tulis dengan gerakan jari ---------- */
+const pad = $('pad');
+/* bit tekuk: jempol=1 telunjuk=2 tengah=4 manis=8 kelingking=16. Telapak terbuka (0) = netral */
+const MAP = [null, ...'abcdefghijklmnopqrstuvwxyz', ' ', '<', '.', ',', '\n'];   // 1..31
+const dots = [...document.querySelectorAll('#chord i')];
+let shift = true, cMask = 0, cSince = 0, cDone = false;
+const HOLD = 320;                       // ms tahan pose sebelum huruf ditulis
+function label(m){ const c = MAP[m]; return c === ' ' ? '␣' : c === '<' ? '⌫' : c === '\n' ? '⏎' : (c || ''); }
+function commit(m){
+  const c = MAP[m]; if(!c) return;
+  if(c === '<') pad.textContent = pad.textContent.slice(0, -1);
+  else {
+    pad.textContent += (shift && /[a-z]/.test(c)) ? c.toUpperCase() : c;
+    shift = (c === '.' || c === '\n') ? true : (/[a-z]/.test(c) ? false : shift);
+  }
+  pad.scrollTop = pad.scrollHeight;
+}
+const MCP = [5, 9, 13, 17];
+let cState = [false, false, false, false, false];
+function foldMask(h, st){                  // st: status sebelumnya (hysteresis), opsional
+  const d = (a, b) => Math.hypot(h[a].x - h[b].x, h[a].y - h[b].y);
+  let m = 0;
+  const rT = d(4, 17) / (d(5, 17) || 1);                         // jempol: jauh dari kelingking = lurus
+  if(rT < (st ? (st[0] ? 1.35 : 1.1) : 1.2)) m |= 1;
+  for(let i = 1; i < 5; i++){                                    // jari: ujung dekat pergelangan = tekuk
+    const r = d(TIPS_[i], 0) / (d(MCP[i - 1], 0) || 1);
+    if(r < (st ? (st[i] ? 1.55 : 1.25) : 1.4)) m |= 1 << i;
+  }
+  return m;
+}
+const TIPS_ = [4, 8, 12, 16, 20];
+let armed = true;
+function chordStep(h, now){
+  let m = 0;
+  if(h){ m = foldMask(h, cState); cState = [0, 1, 2, 3, 4].map(i => !!(m & (1 << i))); }
+  else cState = [false, false, false, false, false];
+  dots.forEach((el, i) => el.classList.toggle('f', !!(m & (1 << i))));
+  if(m !== cMask){ cMask = m; cSince = now; cDone = false; }
+  if(m === 0 && now - cSince > 120) armed = true;               // harus buka telapak dulu antar huruf
+  const t = (m && armed && !cDone) ? Math.min(1, (now - cSince) / HOLD) : 0;
+  $('hold').style.width = (t * 100) + '%';
+  $('pend').textContent = m ? label(m) : '';
+  if(t >= 1){ cDone = true; armed = false; commit(m); }
+}
+(function buildSheet(){
+  const sh = $('sheet');
+  for(let m = 1; m <= 31; m++){
+    const row = document.createElement('div');
+    const g = [1, 2, 4, 8, 16].map(b => (m & b) ? '●' : '○').join('');
+    row.innerHTML = `<b>${label(m)}</b><span>${g}</span>`; sh.appendChild(row);
+  }
+  const n = document.createElement('small');
+  n.textContent = 'Urutan: jempol, telunjuk, tengah, manis, kelingking. ● = ditekuk, ○ = lurus. Telapak terbuka = netral. Tahan pose ±0,3 dtk sampai bar penuh, lalu buka telapak lebar sebelum huruf berikutnya.';
+  sh.appendChild(n);
+})();
+$('help').onclick = () => $('sheet').classList.toggle('show');
+
+/* ---------- geometry helpers ---------- */
+let map = { ox:0, oy:0, w:1, h:1 };
+function calcMap(){
+  const vw = vid.videoWidth || 1280, vh = vid.videoHeight || 720;
+  const s = Math.max(W / vw, H / vh);
+  map = { w: vw * s, h: vh * s, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2 };
+}
+const toScreen = lm => ({ x: W - (map.ox + lm.x * map.w), y: map.oy + lm.y * map.h });
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/* ---------- drawing ---------- */
+function coord(p){
+  ctx.fillStyle = 'rgba(255,255,255,.9)';
+  ctx.fillText(`${p.x | 0},${p.y | 0}`, p.x + 6, p.y - 6);
+}
+function dot(p, r = 3, c = '#7fe0ff'){
+  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fillStyle = c; ctx.fill();
+}
+function poly(pts, fill){
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+  if(fill){ ctx.fillStyle = fill; ctx.fill(); }
+  ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1; ctx.stroke();
+}
+const TIPS = [4, 8, 12, 16, 20];          // jempol, telunjuk, tengah, manis, kelingking
+function extended(h){                     // jari yang lurus -> titik aktif
+  const m = foldMask(h); return TIPS.map((_, i) => !(m & (1 << i)));
+}
+function fillPoly(pts){
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+  ctx.fillStyle = pattern; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1; ctx.stroke();
+}
+function line2(a, b){
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+  ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1; ctx.stroke();
+}
+function drawHand(h, ext){
+  const pts = TIPS.map(t => h[t]).filter((_, i) => ext[i]);
+  if(pts.length >= 3) fillPoly(pts);
+  else if(pts.length === 2) line2(pts[0], pts[1]);
+  pts.forEach(p => { dot(p, 3, '#2fc4f0'); coord(p); });
+}
+function drawLink(A, B, eA, eB){          // sambungkan jari yang sama di kedua tangan
+  const idx = [0, 1, 2, 3, 4].filter(i => eA[i] && eB[i]);
+  const P = i => A[TIPS[i]], Q = i => B[TIPS[i]];
+  if(idx.length >= 3){
+    for(let k = 0; k < idx.length; k++){
+      const i = idx[k], j = idx[(k + 1) % idx.length];
+      fillPoly([P(i), P(j), Q(j), Q(i)]);
+    }
+  } else if(idx.length === 2){
+    fillPoly([P(idx[0]), P(idx[1]), Q(idx[1]), Q(idx[0])]);
+  }
+  idx.forEach(i => line2(P(i), Q(i)));
+}
+function drawCursor(p, pinch){
+  ctx.beginPath(); ctx.arc(p.x, p.y, pinch ? 9 : 14, 0, 7);
+  ctx.strokeStyle = pinch ? '#7fe0ff' : 'rgba(255,255,255,.9)'; ctx.lineWidth = 2; ctx.stroke();
+}
+
+/* ---------- interaction ---------- */
+const allBtns = [...document.querySelectorAll('.btn')];
+const rc = new Map();
+function rectOf(el){
+  const t = performance.now(), c = rc.get(el);
+  if(c && t - c.t < 400) return c.r;
+  const r = el.getBoundingClientRect(); rc.set(el, { r, t }); return r;
+}
+let hoverBtn = null, hoverT = 0, locked = false, lastPinch = false, lastClick = 0;
+function hit(p){
+  for(const b of allBtns){
+    const r = rectOf(b), m = 10;
+    if(p.x > r.left - m && p.x < r.right + m && p.y > r.top - m && p.y < r.bottom + m) return b;
+  }
+  return null;
+}
+function interact(p, pinch, now){
+  const b = hit(p);
+  allBtns.forEach(x => x.classList.toggle('hover', x === b));
+  if(b !== hoverBtn){ hoverBtn && hoverBtn.style.setProperty('--p', 0); hoverBtn = b; hoverT = now; locked = false; }
+  if(b){
+    const prog = locked ? 0 : Math.min(100, (now - hoverT) / 1000 * 100);
+    b.style.setProperty('--p', prog);
+    const pinchEdge = pinch && !lastPinch && now - lastClick > 500;
+    if((prog >= 100 && !locked) || pinchEdge){ locked = true; lastClick = now; b.style.setProperty('--p', 0); b.click(); }
+  }
+  lastPinch = pinch;
+}
+function clearHover(){
+  allBtns.forEach(x => { x.classList.remove('hover'); x.style.setProperty('--p', 0); });
+  hoverBtn = null; lastPinch = false;
+}
+
+/* ---------- main loop ---------- */
+/* deteksi (rVFC, adaptif) dipisah dari render (rAF 60fps) supaya gerakan tetap mulus walau model lambat */
+let detMs = 0, target = [], disp = [], seen = 0, skipF = 0, lastR = 0;
+function schedule(){
+  if('requestVideoFrameCallback' in vid) vid.requestVideoFrameCallback(detect); else setTimeout(detect, 16);
+}
+function detect(){
+  if(!running) return;
+  schedule();
+  if(!landmarker || vid.readyState < 2) return;
+  if(detMs > 28 && (skipF ^= 1)) return;        // perangkat lambat: deteksi tiap 2 frame
+  calcMap();
+  const t0 = performance.now();
+  const res = landmarker.detectForVideo(vid, t0);
+  const t1 = performance.now();
+  detMs = detMs ? detMs * .9 + (t1 - t0) * .1 : (t1 - t0);
+  frames++;
+  const raw = (res.landmarks || []).map(h => h.map(toScreen)).sort((a, b) => a[0].x - b[0].x);
+  if(raw.length){ target = raw; seen = t1; }
+  else if(t1 - seen > 140) target = [];
+}
+function render(now){
+  if(!running) return;
+  requestAnimationFrame(render);
+  const dt = Math.min(64, now - (lastR || now)); lastR = now;
+  ctx.font = '8px monospace';
+  ctx.clearRect(0, 0, W, H);
+
+  // interpolasi ke hasil deteksi terbaru: halus + responsif
+  if(target.length !== disp.length) disp = target.map(h => h.map(p => ({ x: p.x, y: p.y })));
+  else for(let i = 0; i < target.length; i++){
+    const T = target[i], D = disp[i], palm = dist(T[0], T[9]) || 1, base = 1 - Math.exp(-dt / 38);
+    for(let j = 0; j < 21; j++){
+      const k = Math.min(1, base * (1 + dist(D[j], T[j]) / palm * 5));
+      D[j].x += (T[j].x - D[j].x) * k; D[j].y += (T[j].y - D[j].y) * k;
+    }
+  }
+  const hands = disp;
+
+  if(now - nzT > 110){ nzK = (nzK + 1) % 4; pattern = patterns[nzK]; nzT = now; }
+
+  let cursor = null, pinch = false;
+  if(hands.length >= 2){
+    const [A, B] = hands.slice(0, 2).sort((a, b) => a[0].x - b[0].x);
+    const eA = extended(A), eB = extended(B);
+    drawLink(A, B, eA, eB);
+    drawHand(A, eA); drawHand(B, eB);
+    clearHover();
+    if(noteOn) chordStep(null, now);
+  } else if(hands.length === 1){
+    const h = hands[0], T = h[4], I = h[8];
+    const palm = dist(h[0], h[9]) || 1;
+    pinch = dist(T, I) / palm < .28;
+    drawHand(h, extended(h));
+    cursor = I;
+    drawCursor(I, pinch);
+    interact(I, pinch, now);
+    if(noteOn){
+      const sr = rectOf($('side'));
+      chordStep(I.x > sr.left - 30 ? null : h, now);
+    }
+  } else { clearHover(); if(noteOn) chordStep(null, now); }
+
+  if(lampOn){ const sp = cursor || { x: W / 2, y: H / 2 }; moveLamp(sp.x, sp.y); }
+
+  // FPS
+  if(now - fpsT >= 1000){
+    $('fps').textContent = Math.round(frames * 1000 / (now - fpsT)) + ' FPS · ' + Math.round(detMs) + 'ms';
+    frames = 0; fpsT = now;
+  }
+}
+</script>
+</body>
+</html>
